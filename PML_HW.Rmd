@@ -1,0 +1,177 @@
+---
+title: 'Practical Machine Learning: Weight-Training Technique Evaluation'
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+## 1. Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement ¨C a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+### Literature
+
+E. Velloso, A. Bulling, H. Gellersen, W. Ugulino, H. Fuks. 2013. Qualitative activity recognition of weight lifting exercises. In __Proceedings of the 4th Augmented Human International Conference (AH '13)__. ACM, New York, NY, USA, 116-123.
+
+## 2. Data 
+
+**Training data**: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+**Assignment test data**: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project was downloaded from: http://groupware.les.inf.puc-rio.br/har
+
+### Data Transformations
+
+From the training_set data and the testing_set data:
+
+* remove first eight columns, containing experimental details; specifically: X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+
+* remove variables that consist of a high number of missing values
+
+From the assignment testing case data:
+
+* remove first eight columns, containing experimental details; specifically: X, user_name, raw_timestamp_part_1, raw_timestamp_part_2, cvtd_timestamp, new_window, num_window
+
+* remove the variable problem_id
+
+### Features
+
+We used the following sensor information for our learning algorithm. We deliberately avoidede aggregate data, such as variance, maximum/minimum, range, etc. to provide raw 3-dimensional movement and velocity information.
+
+**Belt sensors:**
+
+* roll_belt, pitch_belt, yaw_belt
+* gyros_belt_x, gyros_belt_y, gyros_belt_z
+* accel_belt_x, accel_belt_y, accel_belt_z, total_accel_belt
+* magnet_belt_x, magnet_belt_y, magnet_belt_z
+
+**Arm sensors:**
+
+* roll_arm, pitch_arm, yaw_arm
+* gyros_arm_x, gyros_arm_y, gyros_arm_z
+* accel_arm_x, accel_arm_y, accel_arm_z, total_accel_arm
+* magnet_arm_x, "magnet_arm_y", "magnet_arm_z
+
+**Dumbbell sensors:**
+
+* roll_dumbbell, pitch_dumbbell, yaw_dumbbell
+* gyros_dumbbell_x, gyros_dumbbell_y, gyros_dumbbell_z
+* accel_dumbbell_x, accel_dumbbell_y, accel_dumbbell_z, total_accel_dumbbell
+* magnet_dumbbell_x, magnet_dumbbell_y, magnet_dumbbell_z
+
+**Forearm sensors:**
+
+* roll_forearm, pitch_forearm, yaw_forearm
+* gyros_forearm_x, gyros_forearm_y, gyros_forearm_z
+* accel_forearm_x, accel_forearm_y, accel_forearm_z, total_accel_forearm
+* magnet_forearm_x, magnet_forearm_y, magnet_forearm_z
+
+## 3. Setting Up the Environment
+
+```{r}
+library( caret )
+library( randomForest )
+```
+Ensure reproducibility by setting the seed for the randon number generator, and the path to the input and output files
+```{r echo=TRUE}
+set.seed( 1234 )
+setwd( "D://Coursera//Data Science//PML" )
+```
+
+## 4. Input Training/Test Data and Preprocessing/Cleaning
+
+```{r echo=TRUE}
+training_df <- read.csv( "pml-training.csv", header = TRUE, sep = ",", na.strings=c( "NA", "#DIV/0!", "" ) )
+testing_df <- read.csv( "pml-testing.csv", header = TRUE, sep = ",", na.strings=c( "NA", "#DIV/0!", "" ) )
+# Discard user, time/date stamp information, etc.
+drops <- c( "X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window" )
+training <- training_df[ , !( names( training_df ) %in% drops ) ]
+# Perform the same transformation to the official test case date set:
+testing <- testing_df[ , !( names( testing_df ) %in% drops ) ]
+```
+
+### Training and Testing Sets
+
+Generate training and test data sets, splitting 60% and 40% respectively:
+```{r echo=TRUE}
+train_vector <- createDataPartition( y=training$classe, p=0.6, list=FALSE )
+training_set <- training[ train_vector, ]
+testing_set <- training[ -train_vector, ]
+```
+
+### Feature Selection
+
+We reduce the data sets to exactly the significant variables. Our strategy will be to use only the raw sensor data that reflects movement and direction, and so eliminate all variables that make use of aggregations of information, such as the variance, maximum/minimum, range, etc.
+
+```{r echo=TRUE}
+features_list <- names( training_set ) %in% c(
+        "roll_belt", "pitch_belt", "yaw_belt",
+        "gyros_belt_x", "gyros_belt_y", "gyros_belt_z",
+        "accel_belt_x", "accel_belt_y", "accel_belt_z", "total_accel_belt",
+        "magnet_belt_x", "magnet_belt_y", "magnet_belt_z",
+        
+        "roll_arm", "pitch_arm", "yaw_arm",
+        "gyros_arm_x", "gyros_arm_y", "gyros_arm_z",
+        "accel_arm_x", "accel_arm_y", "accel_arm_z",  "total_accel_arm",
+        "magnet_arm_x", "magnet_arm_y", "magnet_arm_z",
+        
+        "roll_dumbbell", "pitch_dumbbell", "yaw_dumbbell",
+        "gyros_dumbbell_x", "gyros_dumbbell_y", "gyros_dumbbell_z",
+        "accel_dumbbell_x", "accel_dumbbell_y", "accel_dumbbell_z", "total_accel_dumbbell",
+        "magnet_dumbbell_x", "magnet_dumbbell_y", "magnet_dumbbell_z",
+        
+        "roll_forearm", "pitch_forearm", "yaw_forearm",
+        "gyros_forearm_x", "gyros_forearm_y", "gyros_forearm_z",
+        "accel_forearm_x", "accel_forearm_y", "accel_forearm_z", "total_accel_forearm",
+        "magnet_forearm_x", "magnet_forearm_y", "magnet_forearm_z",
+        
+        "classe" )
+training_set <- training_set[ features_list ]
+testing_set <- testing_set[ features_list ]
+```
+
+Perform a similar transformation on the final testing data as well:
+
+```{r echo=TRUE}
+# Note: the value for the last variable in the Boolean-vector is true, coinciding with the problem_id variable. We will remove that variable to not confuse the tree building routine.
+testing <- testing[ features_list ] # Test case data set
+testing <- testing[ -length( testing ) ] # Trim of the problem_id
+```
+
+We remove any overly-sparse variables, , i.e in this case missing more than 10% of their values:
+
+```{r echo=TRUE}
+# Simple function to calculate the percentage of NAs observations in a row
+sQuotient <- function( r ){ return( ( length( r ) - sum( is.na( r ) ) )/(length( r )) ) }
+# Identify the variables that are sparse: creating a sparseness vector and map against dataset row values 
+sparseness_quotient <- apply( training_set, 2, sQuotient )
+# Remove variables that contribute little to the calculation
+training_set <- training_set[ , sparseness_quotient > 0.90 ]
+```
+
+## 5. Model Building and Validation
+
+We build the model based on the random forest learning method, using our selected features, and verify their importance in the  model. Random forests are a way of averaging multiple deep decision trees, trained on different parts of the same training set, with the goal of reducing the variance. This comes at the expense of a small increase in the bias and some loss of interpretability, but generally greatly boosts the performance of the final model.
+```{r echo=TRUE}
+model <- randomForest( classe ~ ., data=training_set )
+varImp( model, scale = FALSE )
+```
+
+### Prediction Results and Expectation For Out-of-sample Error
+
+The results show a very high accuracy on the testing set:
+```{r echo=TRUE}
+predictions <- predict( model, testing_set, type = "class")
+confusionMatrix( predictions, testing_set$classe )
+```
+
+The accuracy is 0.9932 with a 95% confidence interval of (0.9912, 0.9949). The Kappa statistic is a measure of concordance for categorical data that measures agreement relative to what would be expected by chance. Values of 1 indicate perfect agreement, while a value of zero would indicate a lack of agreement. We see a value very close to one in this case, indicating high accuracy.
+
+## 6. Perform Evaluation on Assignment Test Case Data
+
+Using the random tree model from the previous section, we now run the assignment cases through our machine learning model, and write the output to individual files for submission:
+```{r echo=TRUE}
+testing_predictions <- predict( model, testing, type = "class" )
+for( i in 1:length( testing_predictions ) ){ write.table( testing_predictions[ i ], file=paste0( "problem_id_",i,".txt" ), quote=FALSE, row.names=FALSE, col.names=FALSE ) }
+```
